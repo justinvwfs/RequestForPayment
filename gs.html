@@ -1,0 +1,94 @@
+/**
+ * Request for Payment System | Backend Core
+ * Author: 賈哥今晚沒喝夠
+ */
+
+const TEMP_FOLDER_NAME = "請款暫存區";
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('index')
+    .setTitle('專屬請款中控台 | 實體同步加強版')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+}
+
+// 取得或建立暫存資料夾
+function getTempFolder() {
+  var folders = DriveApp.getFoldersByName(TEMP_FOLDER_NAME);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(TEMP_FOLDER_NAME);
+}
+
+// [核心] 執行暫存上傳 (前端 onFileChange 呼叫)
+function uploadToTemp(itemName, fileBase64, fileName, fileType) {
+  try {
+    var folder = getTempFolder();
+    var blob = Utilities.newBlob(Utilities.base64Decode(fileBase64), fileType, fileName);
+    var file = folder.createFile(blob);
+    file.setDescription(itemName); // 用於分類讀取
+    return { status: "success", fileName: fileName, fileId: file.getId() };
+  } catch (e) {
+    return { status: "error", message: e.toString() };
+  }
+}
+
+// 刪除暫存檔 (可選)
+function deleteFromTemp(fileId) {
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+    return { status: "success" };
+  } catch (e) { return { status: "error" }; }
+}
+
+// 從雲端讀取所有暫存檔
+function loadTempFiles() {
+  var folder = getTempFolder();
+  var files = folder.getFiles();
+  var results = {};
+  while (files.hasNext()) {
+    var file = files.next();
+    var category = file.getDescription() || "其他項目";
+    if (!results[category]) results[category] = [];
+    results[category].push({ fileId: file.getId(), name: file.getName() });
+  }
+  return JSON.stringify(results);
+}
+
+// [核心] 一鍵發送：搬移至正式資料夾並寄信 (前端 dispatchProcess 呼叫)
+function processFinalRequest(data) {
+  try {
+    var targetEmail = data.targetEmail;
+    var finalFolderName = Utilities.formatDate(new Date(), "GMT+8", "yyyyMM") + "_正式請款";
+    var finalFolder = DriveApp.createFolder(finalFolderName);
+    var attachments = [];
+    
+    var tempFolder = getTempFolder();
+    var files = tempFolder.getFiles();
+    
+    var hasFiles = false;
+    while (files.hasNext()) {
+      hasFiles = true;
+      var file = files.next();
+      
+      // 先取得 Blob 加入附件列表
+      attachments.push(file.getBlob());
+      
+      // 移動檔案至正式資料夾
+      file.moveTo(finalFolder);
+    }
+
+    if (!hasFiles) {
+      return { status: "error", message: "暫存區無檔案，無法發送。" };
+    }
+
+    MailApp.sendEmail({
+      to: targetEmail,
+      subject: "【正式請款通知】" + finalFolderName,
+      body: "您好，\n\n單據已從暫存區成功轉正歸檔。\n\n雲端存檔位置：" + finalFolder.getUrl() + "\n\n由 小賈哥專屬請款系統 自動發送。",
+      attachments: attachments
+    });
+
+    return { status: "success" };
+  } catch (e) {
+    return { status: "error", message: e.toString() };
+  }
+}

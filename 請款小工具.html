@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;900&family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        
+        body { 
+            font-family: 'Outfit', 'Noto Sans TC', sans-serif; 
+            background: #f8fafc; 
+            min-height: 100vh;
+            color: #1e293b;
+            /* 防止手機下拉重整干擾操作 */
+            overscroll-behavior-y: none; 
+        }
+
+        .glass-ui {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.05);
+        }
+
+        /* 導航卡片 */
+        .nav-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 1.5rem; }
+        .nav-card.active {
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.2);
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            border-radius: 1.25rem;
+            transition: all 0.3s;
+        }
+        .action-btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4); }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .text-jumbo { font-size: clamp(2rem, 5vw, 3.5rem); }
+
+        /* 里程表樣式 */
+        .table-input {
+            width: 100%;
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 8px 4px;
+            font-weight: 600;
+            color: #334155;
+            text-align: center;
+            outline: none;
+            transition: all 0.2s;
+            border-radius: 8px;
+        }
+        .table-input:focus { background: white; border-color: #a5b4fc; box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.3); }
+        
+        /* 手機版卡片樣式 */
+        .mobile-card {
+            background: white;
+            border-radius: 1.5rem;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid #f1f5f9;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .sortable-ghost { opacity: 0.2; background: #c7d2fe !important; }
+        .drag-handle { cursor: grab; color: #cbd5e1; touch-action: none; } /* touch-action 重要 */
+        
+        input::-webkit-calendar-picker-indicator { opacity: 0.5; font-size: 0.8em; }
+    </style>
+    <title>Multi-Sync | Mobile Ready</title>
+</head>
+<body class="p-3 md:p-6 bg-slate-100 pb-24 md:pb-6"> <div id="app" class="max-w-[1800px] mx-auto space-y-4">
+        
+        <header class="flex justify-between items-center px-2 py-2 sticky top-0 z-50 bg-slate-100/90 backdrop-blur-sm">
+            <div class="flex items-center space-x-3">
+                <div v-if="currentView === 'mileage'" @click="currentView = 'dashboard'" 
+                     class="w-10 h-10 md:w-12 md:h-12 bg-white rounded-2xl flex items-center justify-center cursor-pointer hover:bg-indigo-50 shadow-sm border border-slate-200">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-black text-slate-800 tracking-tighter">MULTI-SYNC</h1>
+                    <p class="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] md:tracking-[0.3em]">
+                        {{ currentView === 'dashboard' ? 'Request Control' : 'Mileage Analysis' }}
+                    </p>
+                </div>
+            </div>
+
+            <div v-if="currentView === 'dashboard'">
+                 <button @click="currentView = 'mileage'" class="glass-ui px-3 py-2 md:px-6 md:py-3 rounded-2xl flex items-center space-x-2 md:space-x-3 hover:bg-indigo-50 border-indigo-200">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    <span class="hidden md:inline text-sm font-black text-indigo-600">里程解析 &rarr;</span>
+                 </button>
+            </div>
+        </header>
+
+        <div v-if="currentView === 'dashboard'" class="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full animate-fade-in">
+            
+            <div class="lg:hidden w-full overflow-x-auto no-scrollbar flex space-x-2 pb-2">
+                <div v-for="group in categories" :key="group.name" class="flex space-x-2 shrink-0">
+                    <button v-for="item in group.items" @click="selectedItem = item"
+                            :class="['px-5 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all border', 
+                                     selectedItem?.name === item.name ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white text-slate-500 border-white shadow-sm']">
+                        {{ item.name }}
+                        <span v-if="fileStore[item.name]?.length" class="ml-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px]">{{ fileStore[item.name].length }}</span>
+                    </button>
+                </div>
+            </div>
+
+            <aside class="hidden lg:block w-80 space-y-6">
+                <div v-for="group in categories" :key="group.name" class="space-y-3">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.3em] ml-2">{{ group.name }}</h3>
+                    <div class="grid grid-cols-1 gap-2">
+                        <button v-for="item in group.items" @click="selectedItem = item"
+                                :class="['nav-card glass-ui p-6 text-left flex justify-between items-center', 
+                                         selectedItem?.name === item.name ? 'active font-bold' : 'hover:bg-indigo-50 text-slate-600']">
+                            <span class="text-lg">{{ item.name }}</span>
+                            <div v-if="fileStore[item.name]?.length" class="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold">{{ fileStore[item.name].length }}</div>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="flex-1 glass-ui rounded-[2rem] md:rounded-[3rem] p-6 md:p-12 min-h-[500px] flex flex-col relative">
+                <div v-if="selectedItem" class="h-full flex flex-col">
+                    <div class="mb-6 md:mb-10">
+                        <h2 class="text-3xl md:text-jumbo font-black text-slate-800 tracking-tighter leading-none">{{ selectedItem.name }}</h2>
+                        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">格式: {{ selectedItem.format }}</p>
+                    </div>
+                    
+                    <div class="flex-1 border-4 border-dashed border-slate-50 rounded-[2rem] flex flex-col items-center justify-center p-8 md:p-12 hover:border-indigo-100 transition-all cursor-pointer group relative min-h-[200px]">
+                        <input type="file" multiple @change="onFileChange" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div class="text-center group-hover:scale-105 transition-transform duration-500">
+                            <div class="w-16 h-16 md:w-20 md:h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6">
+                                <svg class="w-6 h-6 md:w-8 md:h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            </div>
+                            <p class="text-lg md:text-xl font-bold text-slate-600">點擊匯入單據</p>
+                            <p v-if="isUploading" class="text-indigo-500 font-bold mt-2 animate-pulse">上傳中...</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 max-h-64 overflow-y-auto no-scrollbar space-y-3">
+                        <div v-for="(f, idx) in fileStore[selectedItem.name]" :key="idx" 
+                             class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-white">
+                            <div class="flex items-center space-x-3 overflow-hidden">
+                                <span class="w-6 h-6 shrink-0 flex items-center justify-center bg-white rounded-full text-[10px] font-black text-indigo-400">{{ idx + 1 }}</span>
+                                <p class="text-sm md:text-lg font-bold text-slate-700 truncate">{{ f.tempName || f.oldName }}</p>
+                            </div>
+                            <button @click="deleteFile(selectedItem.name, idx)" class="shrink-0 text-slate-400 hover:text-red-500 p-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="h-full flex flex-col items-center justify-center text-slate-300">
+                    <svg class="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                    <span class="text-xl font-light tracking-widest italic">請先選擇類別</span>
+                </div>
+            </main>
+
+            <aside class="w-full lg:w-80 space-y-4 md:space-y-6">
+                <div class="glass-ui rounded-3xl p-6 flex justify-between items-center lg:block lg:space-y-2 border-l-8 border-indigo-500">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Files Ready</p>
+                    <p class="text-4xl md:text-6xl font-black text-slate-800">{{ dashboardStats.totalCount }}</p>
+                </div>
+
+                <div class="glass-ui rounded-3xl p-6 space-y-4">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target</p>
+                    <select v-model="targetEmail" class="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold text-slate-700 outline-none">
+                        <option v-for="opt in emailOptions" :value="opt.value">{{ opt.label }}</option>
+                    </select>
+                    <input v-if="targetEmail === 'other'" v-model="customEmail" type="text" placeholder="輸入 Email" class="w-full p-3 bg-slate-50 rounded-xl text-sm">
+                </div>
+
+                <button @click="dispatchProcess" :disabled="isSending"
+                        class="action-btn w-full py-6 md:py-8 text-white text-xl md:text-2xl font-black tracking-[0.2em] shadow-2xl disabled:opacity-50 active:scale-95 transition-transform">
+                    {{ isSending ? '傳輸中...' : '一鍵發送' }}
+                </button>
+            </aside>
+        </div>
+
+        <div v-if="currentView === 'mileage'" class="flex flex-col gap-4 animate-fade-in pb-12">
+            
+            <div class="glass-ui rounded-3xl p-4 md:p-6 flex flex-col xl:flex-row gap-6">
+                <div class="flex flex-col gap-3 w-full xl:w-auto">
+                    <div class="flex gap-2">
+                        <div class="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 flex-1 flex flex-col items-center">
+                            <span class="text-[8px] text-slate-400 font-bold uppercase">Year</span>
+                            <input v-model="mileageSettings.year" class="bg-transparent text-center font-bold w-full outline-none">
+                        </div>
+                        <div class="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 flex-1 flex flex-col items-center">
+                            <span class="text-[8px] text-slate-400 font-bold uppercase">Month</span>
+                            <input v-model="mileageSettings.month" class="bg-transparent text-center font-bold w-full outline-none">
+                        </div>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                        <button @click="generateCalendar" class="bg-slate-800 text-white px-4 py-3 rounded-xl font-bold text-xs shadow-lg shrink-0">重置</button>
+                        <input type="file" ref="fileInput" @change="importExcel" class="hidden" accept=".xlsx, .xls">
+                        <button @click="$refs.fileInput.click()" class="bg-white text-emerald-600 border border-emerald-100 px-4 py-3 rounded-xl font-bold text-xs shadow-sm shrink-0">匯入</button>
+                        <button @click="exportExcel" class="bg-emerald-500 text-white px-4 py-3 rounded-xl font-bold text-xs shadow-lg shrink-0">匯出</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
+                     <div class="bg-white p-3 rounded-2xl border border-indigo-100 shadow-sm">
+                        <p class="text-[9px] font-bold text-indigo-400 uppercase">預估里程</p>
+                        <p class="text-lg md:text-xl font-black text-indigo-600">{{ mileageStats.totalEstDist }}</p>
+                     </div>
+                     <div class="bg-white p-3 rounded-2xl border border-green-100 shadow-sm">
+                        <p class="text-[9px] font-bold text-green-400 uppercase">補貼金額</p>
+                        <p class="text-lg md:text-xl font-black text-green-600">${{ mileageStats.totalSubsidy.toLocaleString() }}</p>
+                     </div>
+                     <div class="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                        <p class="text-[9px] font-bold text-slate-400 uppercase">實際里程</p>
+                        <p class="text-lg md:text-xl font-black text-slate-600">{{ mileageStats.totalActualDist }}</p>
+                     </div>
+                     <div :class="['p-3 rounded-2xl border shadow-sm', mileageStats.diff === 0 ? 'bg-white border-slate-100' : 'bg-red-50 border-red-100']">
+                        <p class="text-[9px] font-bold uppercase text-slate-400">誤差</p>
+                        <p class="text-lg md:text-xl font-black" :class="mileageStats.diff === 0 ? 'text-slate-300' : 'text-red-600'">{{ mileageStats.diff }}</p>
+                     </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col lg:flex-row gap-4 h-full">
+                <aside class="w-full lg:w-64 shrink-0 glass-ui rounded-3xl p-4 md:p-6 space-y-3">
+                    <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest border-b pb-2">參數設定</h3>
+                    <div class="grid grid-cols-3 lg:grid-cols-1 gap-2">
+                        <div class="space-y-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase">費率</label>
+                            <input type="number" v-model="mileageSettings.rate" class="w-full p-2 bg-slate-50 border rounded-lg font-bold text-indigo-600 text-center">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase">期初</label>
+                            <input type="number" v-model="mileageSettings.periodStart" class="w-full p-2 bg-slate-50 border rounded-lg font-bold text-center">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase">期末</label>
+                            <input type="number" v-model="mileageSettings.periodEnd" class="w-full p-2 bg-slate-50 border rounded-lg font-bold text-center">
+                        </div>
+                    </div>
+                </aside>
+
+                <main class="flex-1 glass-ui rounded-3xl p-1 md:p-4 min-h-[600px] bg-slate-50/50">
+                    
+                    <div class="md:hidden space-y-3 p-2" ref="sortableMobile">
+                        <div v-for="(row, idx) in mileageRows" :key="row.id" class="mobile-card relative group">
+                            <div class="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                <div class="flex items-center gap-2">
+                                    <div class="drag-handle p-2 bg-slate-50 rounded-lg">
+                                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                                    </div>
+                                    <span class="font-black text-slate-600 text-lg">{{ formatDate(idx) }}</span>
+                                </div>
+                                <div class="flex items-center gap-2 bg-indigo-50 px-2 py-1 rounded-lg">
+                                    <span class="text-[9px] font-bold text-indigo-400 uppercase">Est.</span>
+                                    <input type="number" v-model.number="row.estDist" class="w-12 bg-transparent text-right font-black text-indigo-600 text-lg outline-none" placeholder="0">
+                                    <span class="text-xs text-indigo-400 font-bold">km</span>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                    <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Time</label>
+                                    <div class="flex gap-1 items-center bg-slate-50 p-2 rounded-lg">
+                                        <input v-model="row.startTime" placeholder="09:00" class="w-full bg-transparent text-sm font-bold text-center outline-none">
+                                        <span class="text-slate-300">-</span>
+                                        <input v-model="row.endTime" placeholder="18:00" class="w-full bg-transparent text-sm font-bold text-center outline-none">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Route</label>
+                                    <div class="flex flex-col gap-1">
+                                        <input v-model="row.startCity" list="cities" placeholder="起點" class="bg-white border border-slate-100 p-1.5 rounded text-sm text-center outline-none">
+                                        <input v-model="row.endCity" list="cities" placeholder="終點" class="bg-white border border-slate-100 p-1.5 rounded text-sm text-center outline-none">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-between items-center bg-slate-100 rounded-lg p-2 px-4">
+                                <div class="text-center">
+                                    <p class="text-[8px] text-slate-400 font-bold uppercase">Start ODO</p>
+                                    <p class="font-mono text-slate-500 font-bold">{{ getCalculatedOdo(idx).start }}</p>
+                                </div>
+                                <div class="text-slate-300">→</div>
+                                <div class="text-center">
+                                    <p class="text-[8px] text-slate-400 font-bold uppercase">End ODO</p>
+                                    <p class="font-mono text-slate-800 font-bold">{{ getCalculatedOdo(idx).end }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto h-full rounded-2xl bg-white shadow-sm">
+                        <table class="w-full text-left border-collapse min-w-[800px]">
+                            <thead class="sticky top-0 z-20 bg-slate-50">
+                                <tr class="text-slate-400 border-b border-slate-200">
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-28">日期</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-10 text-center">排序</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-40">時間</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest">地點 (起 → 終)</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-28 text-center text-slate-300">起始儀表</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-28 text-center text-slate-800">結束儀表</th>
+                                    <th class="p-4 text-[10px] font-black uppercase tracking-widest w-32 text-center text-indigo-600 bg-indigo-50/50">預估里程</th>
+                                </tr>
+                            </thead>
+                            <tbody ref="sortableTable">
+                                <tr v-for="(row, idx) in mileageRows" :key="row.id" class="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors group h-16">
+                                    <td class="p-4 font-bold text-slate-400 text-sm select-none font-mono">{{ formatDate(idx) }}</td>
+                                    <td class="p-2 text-center">
+                                        <div class="drag-handle w-8 h-8 rounded hover:bg-slate-200 flex items-center justify-center mx-auto cursor-grab active:cursor-grabbing">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                                        </div>
+                                    </td>
+                                    <td class="p-2">
+                                        <div class="flex items-center gap-1 bg-white rounded-lg border border-slate-100 p-1 shadow-sm">
+                                            <input v-model="row.startTime" placeholder="09:00" class="table-input text-xs w-14">
+                                            <span class="text-slate-300 text-[10px]">-</span>
+                                            <input v-model="row.endTime" placeholder="18:00" class="table-input text-xs w-14">
+                                        </div>
+                                    </td>
+                                    <td class="p-2">
+                                        <div class="flex items-center gap-1">
+                                            <input v-model="row.startCity" list="cities" placeholder="起點" class="table-input bg-white border border-slate-100 shadow-sm text-sm">
+                                            <span class="text-slate-300">→</span>
+                                            <input v-model="row.endCity" list="cities" placeholder="終點" class="table-input bg-white border border-slate-100 shadow-sm text-sm">
+                                        </div>
+                                    </td>
+                                    <td class="p-4 text-center font-mono text-slate-400 font-medium text-sm">{{ getCalculatedOdo(idx).start }}</td>
+                                    <td class="p-4 text-center font-mono text-slate-700 font-bold text-sm">{{ getCalculatedOdo(idx).end }}</td>
+                                    <td class="p-2 bg-indigo-50/30 border-l border-indigo-100">
+                                        <input type="number" v-model.number="row.estDist" placeholder="0" class="table-input text-indigo-600 font-black text-xl text-center bg-transparent focus:bg-white">
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <datalist id="cities">
+            <option v-for="city in taiwanCities" :value="city"></option>
+        </datalist>
+
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+        
+        createApp({
+            setup() {
+                const currentView = ref('dashboard'); 
+                
+                // --- DASHBOARD ---
+                const categories = [
+                    { name: "基本費用", items: [{ name: "里程數", format: "PNG/JPG" }, { name: "停車費", format: "PDF/JPG" }] },
+                    { name: "交通相關", items: [{ name: "計程車資", format: "PNG/JPG" }, { name: "高鐵明細", format: "PDF/JPG" }] },
+                    { name: "其他項目", items: [{ name: "住宿餐飲", format: "PDF/JPG" }, { name: "雜項費用", format: "ANY" }] }
+                ];
+                const emailOptions = [
+                    { label: 'Justin (VWFS)', value: 'Justin.Huang@vwfs.com' },
+                    { label: 'Justin (Personal)', value: 'justin.vwfsag@gmail.com' },
+                    { label: '其他 (Other)', value: 'other' }
+                ];
+                const selectedItem = ref(null);
+                const fileStore = reactive({});
+                const targetEmail = ref('Justin.Huang@vwfs.com');
+                const customEmail = ref('');
+                const isSending = ref(false);
+                const isUploading = ref(false);
+
+                const dashboardStats = computed(() => {
+                    let total = 0;
+                    Object.values(fileStore).forEach(list => total += list.length);
+                    return { totalCount: total };
+                });
+
+                const onFileChange = (e) => {
+                    const files = Array.from(e.target.files);
+                    const itemName = selectedItem.value.name;
+                    if (!files.length) return;
+                    if (!fileStore[itemName]) fileStore[itemName] = [];
+                    isUploading.value = true;
+                    
+                    files.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            const content = evt.target.result; 
+                            const base64 = content.split(',')[1];
+                            const contentType = content.split(',')[0].split(':')[1].split(';')[0];
+                            google.script.run
+                                .withSuccessHandler((res) => {
+                                    isUploading.value = false;
+                                    if (res.status === 'success') {
+                                        fileStore[itemName].push({ oldName: file.name, ext: file.name.split('.').pop(), tempName: res.fileName, status: '已上傳' });
+                                    } else { alert(`上傳失敗: ${res.message}`); }
+                                })
+                                .withFailureHandler((err) => { isUploading.value = false; alert('系統錯誤: ' + err); })
+                                .uploadToTemp(itemName, base64, file.name, contentType);
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                };
+
+                const deleteFile = (name, idx) => { fileStore[name].splice(idx, 1); };
+                
+                const dispatchProcess = async () => {
+                    const mail = targetEmail.value === 'other' ? customEmail.value : targetEmail.value;
+                    if (!mail) { alert("請輸入 Email"); return; }
+                    let hasFiles = false;
+                    Object.values(fileStore).forEach(arr => { if(arr.length > 0) hasFiles = true; });
+                    if (!hasFiles) { alert("無檔案可發送"); return; }
+                    if(!confirm(`確認發送給 ${mail}？`)) return;
+                    isSending.value = true;
+                    google.script.run
+                        .withSuccessHandler((res) => {
+                            isSending.value = false;
+                            if (res.status === 'success') {
+                                alert(`✅ 發送成功！`);
+                                for (const key in fileStore) fileStore[key] = [];
+                            } else { alert(`❌ 失敗: ${res.message}`); }
+                        })
+                        .withFailureHandler((err) => { isSending.value = false; alert('連線錯誤: ' + err); })
+                        .processFinalRequest({ targetEmail: mail });
+                };
+
+                // --- MILEAGE ---
+                const sortableTable = ref(null);
+                const sortableMobile = ref(null); // 新增：手機版拖曳容器
+                const fileInput = ref(null);
+                const taiwanCities = ["基隆市", "台北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣", "台中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "台南市", "高雄市", "屏東縣", "台東縣", "花蓮縣", "宜蘭縣", "澎湖縣", "金門縣", "連江縣"];
+                const mileageSettings = reactive({ year: 2025, month: 12, rate: 8, periodStart: 12500, periodEnd: 13200 });
+                const mileageRows = ref([]);
+
+                const generateCalendar = () => {
+                    const daysInMonth = new Date(mileageSettings.year, mileageSettings.month, 0).getDate();
+                    mileageRows.value = [];
+                    for (let i = 1; i <= daysInMonth; i++) {
+                        mileageRows.value.push({ id: `day-${i}-${Date.now()}`, startTime: '', endTime: '', startCity: '', endCity: '', estDist: 0 });
+                    }
+                    initSortable();
+                };
+
+                const formatDate = (idx) => {
+                    const date = new Date(mileageSettings.year, mileageSettings.month - 1, idx + 1);
+                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                    const d = String(date.getDate()).padStart(2, '0');
+                    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                    return `${m}/${d} (${weekdays[date.getDay()]})`;
+                };
+
+                const initSortable = () => {
+                    nextTick(() => {
+                        const config = {
+                            handle: '.drag-handle', animation: 150,
+                            ghostClass: 'sortable-ghost',
+                            onEnd: (evt) => {
+                                const item = mileageRows.value.splice(evt.oldIndex, 1)[0];
+                                mileageRows.value.splice(evt.newIndex, 0, item);
+                            }
+                        };
+                        // 綁定電腦版
+                        if (sortableTable.value) {
+                            if (sortableTable.value._sortable) sortableTable.value._sortable.destroy();
+                            Sortable.create(sortableTable.value, config);
+                        }
+                        // 綁定手機版
+                        if (sortableMobile.value) {
+                            if (sortableMobile.value._sortable) sortableMobile.value._sortable.destroy();
+                            Sortable.create(sortableMobile.value, config);
+                        }
+                    });
+                };
+
+                const getCalculatedOdo = (index) => {
+                    let currentOdo = mileageSettings.periodStart;
+                    for (let i = 0; i < index; i++) currentOdo += (mileageRows.value[i].estDist || 0);
+                    return { start: currentOdo, end: currentOdo + (mileageRows.value[index]?.estDist || 0) };
+                };
+
+                const mileageStats = computed(() => {
+                    const totalEst = mileageRows.value.reduce((acc, row) => acc + (row.estDist || 0), 0);
+                    const totalActual = mileageSettings.periodEnd - mileageSettings.periodStart;
+                    return {
+                        totalEstDist: totalEst, totalActualDist: totalActual,
+                        totalSubsidy: totalEst * mileageSettings.rate,
+                        diff: totalActual - totalEst
+                    };
+                });
+
+                const exportExcel = () => { /* Same as before */ 
+                    const exportData = mileageRows.value.map((row, index) => {
+                        const odo = getCalculatedOdo(index);
+                        return { "日期": formatDate(index), "開始時間": row.startTime||'09:00', "結束時間": row.endTime||'18:00', "出發地": row.startCity, "目的地": row.endCity, "起始儀表": odo.start, "結束儀表": odo.end, "預估里程": row.estDist };
+                    });
+                    const ws = XLSX.utils.json_to_sheet(exportData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "里程");
+                    XLSX.writeFile(wb, `Mileage_${mileageSettings.year}${mileageSettings.month}.xlsx`);
+                };
+
+                const importExcel = (e) => { /* Same as before */
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const data = new Uint8Array(evt.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        jsonData.forEach((row, index) => {
+                            if(mileageRows.value[index]) {
+                                mileageRows.value[index].startTime = row['開始時間'];
+                                mileageRows.value[index].endTime = row['結束時間'];
+                                mileageRows.value[index].startCity = row['出發地'];
+                                mileageRows.value[index].endCity = row['目的地'];
+                                mileageRows.value[index].estDist = row['預估里程(km)'] || row['預估里程'] || 0;
+                            }
+                        });
+                        alert('匯入成功'); e.target.value = '';
+                    };
+                    reader.readAsArrayBuffer(file);
+                };
+
+                onMounted(() => { generateCalendar(); });
+
+                return { 
+                    currentView, categories, selectedItem, fileStore, onFileChange, deleteFile, dispatchProcess, dashboardStats, emailOptions, targetEmail, customEmail, isSending, isUploading,
+                    mileageSettings, mileageRows, taiwanCities, sortableTable, sortableMobile, generateCalendar, formatDate, getCalculatedOdo, mileageStats, exportExcel, importExcel
+                };
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
